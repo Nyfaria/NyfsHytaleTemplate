@@ -1,6 +1,8 @@
 plugins {
     id 'java'
+    id 'idea'
     id 'org.jetbrains.gradle.plugin.idea-ext' version '1.3'
+    id 'hytale-mod' version '0.+'
 }
 
 ext {
@@ -13,27 +15,48 @@ java {
     withJavadocJar()
 }
 
-// Quiet warnings about missing Javadocs.
+repositories {
+    mavenCentral()
+}
+
 javadoc {
     options.addStringOption('Xdoclint:-missing', '-quiet')
 }
 
-// Adds the Hytale server as a build dependency, allowing you to reference and
-// compile against their code. This requires you to have Hytale installed using
-// the official launcher for now.
+def serverJar = file("$hytaleHome/install/$patchline/package/game/latest/Server/HytaleServer.jar")
+def serverSrcZip = file("$hytaleHome/install/$patchline/package/game/latest/Server/HytaleServer-src.zip")
+
+ gradle.projectsEvaluated {
+     if (serverJar.exists() && (!serverSrcZip.exists() || serverJar.lastModified() > serverSrcZip.lastModified())) {
+         gradle.startParameter.taskNames = ['decompileServer'] + gradle.startParameter.taskNames
+     }
+ }
+
 dependencies {
-    implementation(files("$hytaleHome/install/$patchline/package/game/latest/Server/HytaleServer.jar"))
+    implementation files(serverJar)
 }
 
-// Create the working directory to run the server if it does not already exist.
+
+processResources {
+    def expandProps = [
+            "version"                      : version,
+            "mod_id"                       : mod_id,
+            "mod_name"                     : mod_name,
+            "description"                  : description
+    ]
+
+    filesMatching(['manifest.json']) {
+        expand expandProps
+    }
+    inputs.properties(expandProps)
+}
+
+
 def serverRunDir = file("$projectDir/run")
 if (!serverRunDir.exists()) {
     serverRunDir.mkdirs()
 }
 
-// Updates the manifest.json file with the latest properties defined in the
-// build.properties file. Currently we update the version and if packs are
-// included with the plugin.
 tasks.register('updatePluginManifest') {
     def manifestFile = file('src/main/resources/manifest.json')
     doLast {
@@ -47,24 +70,6 @@ tasks.register('updatePluginManifest') {
     }
 }
 
-// Makes sure the plugin manifest is up to date.
 tasks.named('processResources') {
     dependsOn 'updatePluginManifest'
-}
-
-// Creates a run configuration in IDEA that will run the Hytale server with
-// your plugin and the default assets.
-idea.project.settings.runConfigurations {
-    'HytaleServer'(org.jetbrains.gradle.ext.Application) {
-        mainClass = 'com.hypixel.hytale.Main'
-        moduleName = project.idea.module.name + '.main'
-        programParameters = "--allow-op --assets=$hytaleHome/install/$patchline/package/game/latest/Assets.zip"
-        if (includes_pack.toBoolean()) {
-            programParameters += " --mods=${sourceSets.main.java.srcDirs.first().parentFile.absolutePath}"
-        }
-        if (load_user_mods.toBoolean()) {
-            programParameters += " --mods=$hytaleHome/UserData/Mods"
-        }
-        workingDirectory = serverRunDir.absolutePath
-    }
 }
