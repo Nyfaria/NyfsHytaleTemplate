@@ -43,7 +43,7 @@ processResources {
             "mod_id"                       : mod_id,
             "mod_name"                     : mod_name,
             "description"                  : description,
-            "author"                       : author
+            "author"                       : author,
             "website"                      : website
     ]
 
