@@ -42,7 +42,9 @@ processResources {
             "version"                      : version,
             "mod_id"                       : mod_id,
             "mod_name"                     : mod_name,
-            "description"                  : description
+            "description"                  : description,
+            "author"                       : author
+            "website"                      : website
     ]
 
     filesMatching(['manifest.json']) {
