@@ -15,6 +15,10 @@ java {
     withJavadocJar()
 }
 
+hytale {
+    updateChannel = patchline
+}
+
 repositories {
     mavenCentral()
 }
@@ -24,13 +28,13 @@ javadoc {
 }
 
 def serverJar = file("$hytaleHome/install/$patchline/package/game/latest/Server/HytaleServer.jar")
-def serverSrcZip = file("$hytaleHome/install/$patchline/package/game/latest/Server/HytaleServer-src.zip")
+def serverSrcZip = file("$hytaleHome/install/$patchline/package/game/latest/Server/HytaleServer-sources.jar")
 
- gradle.projectsEvaluated {
-     if (serverJar.exists() && (!serverSrcZip.exists() || serverJar.lastModified() > serverSrcZip.lastModified())) {
-         gradle.startParameter.taskNames = ['decompileServer'] + gradle.startParameter.taskNames
-     }
- }
+gradle.projectsEvaluated {
+    if (serverJar.exists() && (!serverSrcZip.exists() || serverJar.lastModified() > serverSrcZip.lastModified())) {
+        gradle.startParameter.taskNames = ['decompileServer'] + gradle.startParameter.taskNames
+    }
+}
 
 dependencies {
     implementation files(serverJar)
@@ -59,15 +63,53 @@ if (!serverRunDir.exists()) {
     serverRunDir.mkdirs()
 }
 
+def findHytalePluginClass = {
+    def sourceDir = file('src/main/java')
+    def annotatedClasses = []
+
+    if (sourceDir.exists()) {
+        sourceDir.eachFileRecurse(groovy.io.FileType.FILES) { file ->
+            if (file.name.endsWith('.java')) {
+                def content = file.text
+                if (content.contains('@HytalePlugin')) {
+                    def packageMatcher = content =~ /package\s+([\w.]+)\s*;/
+                    def packageName = packageMatcher ? packageMatcher[0][1] : ''
+                    def classMatcher = content =~ /@HytalePlugin\s*\n?\s*public\s+class\s+(\w+)/
+                    if (classMatcher) {
+                        def className = classMatcher[0][1]
+                        def fqcn = packageName ? "${packageName}.${className}" : className
+                        annotatedClasses << fqcn
+                    }
+                }
+            }
+        }
+    }
+
+    if (annotatedClasses.isEmpty()) {
+        throw new GradleException("No class found with @HytalePlugin annotation!")
+    }
+
+    if (annotatedClasses.size() > 1) {
+        throw new GradleException("Only one @HytalePlugin is allowed, Classes Found: ${annotatedClasses.join(', ')}.")
+    }
+
+    return annotatedClasses.first()
+}
+
 tasks.register('updatePluginManifest') {
     def manifestFile = file('src/main/resources/manifest.json')
     doLast {
         if (!manifestFile.exists()) {
             throw new GradleException("Could not find manifest.json at ${manifestFile.path}!")
         }
+
+        def mainClass = findHytalePluginClass()
+        logger.lifecycle("Found @HytalePlugin annotated class: ${mainClass}")
+
         def manifestJson = new groovy.json.JsonSlurper().parseText(manifestFile.text)
         manifestJson.Version = version
         manifestJson.IncludesAssetPack = includes_pack.toBoolean()
+        manifestJson.Main = mainClass
         manifestFile.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(manifestJson))
     }
 }
